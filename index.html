@@ -34,7 +34,6 @@
       cursor: default;
     }
 
-    /* ── NOISE TEXTURE OVERLAY ── */
     body::before {
       content: '';
       position: fixed; inset: 0;
@@ -42,7 +41,6 @@
       pointer-events: none; z-index: 0; opacity: 0.4;
     }
 
-    /* ── NAV ── */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       padding: 20px 60px;
@@ -87,7 +85,6 @@
     }
     .nav-cta:hover { background: #1241a8 !important; box-shadow: 0 6px 24px var(--blue-glow) !important; }
 
-    /* ── HERO ── */
     .hero {
       min-height: 100vh;
       display: flex; align-items: center; justify-content: center;
@@ -231,7 +228,6 @@
     .stat-num span { color: var(--gold); }
     .stat-desc { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
 
-    /* ── FEATURES ── */
     section { position: relative; z-index: 1; }
 
     .section-label {
@@ -300,7 +296,6 @@
       font-size: 13.5px; color: var(--text-light); line-height: 1.7; font-weight: 300;
     }
 
-    /* ── ROLES ── */
     .roles-section {
       padding: 120px 60px;
       background: var(--navy);
@@ -381,7 +376,6 @@
     }
     .btn-admin:hover { background: #d4911f; transform: translateY(-2px); box-shadow: 0 10px 30px rgba(245,166,35,0.4); }
 
-    /* ── HOW IT WORKS ── */
     .how-section {
       padding: 120px 60px;
       background: var(--navy-mid);
@@ -410,7 +404,6 @@
     .step-title { font-family: var(--font-display); font-size: 15px; font-weight: 700; margin-bottom: 8px; }
     .step-desc { font-size: 13px; color: var(--text-light); line-height: 1.6; font-weight: 300; }
 
-    /* ── TECH STRIP ── */
     .tech-section {
       padding: 80px 60px;
       background: var(--navy);
@@ -431,7 +424,6 @@
       display: flex; align-items: center; gap: 6px;
     }
 
-    /* ── CTA ── */
     .cta-section {
       padding: 140px 60px;
       background: var(--navy-mid);
@@ -448,7 +440,6 @@
     .cta-section .section-sub { margin: 0 auto 48px; max-width: 480px; }
     .cta-section .hero-actions { position: relative; z-index: 1; }
 
-    /* ── FOOTER ── */
     footer {
       background: var(--navy); padding: 48px 60px;
       border-top: 1px solid rgba(255,255,255,0.06);
@@ -469,7 +460,6 @@
     .footer-links a { font-size: 12px; color: var(--text-dim); text-decoration: none; transition: color 0.2s; }
     .footer-links a:hover { color: var(--white); }
 
-    /* ── SCROLL ANIMATIONS ── */
     .reveal {
       opacity: 0; transform: translateY(30px);
       transition: opacity 0.6s ease, transform 0.6s ease;
@@ -481,7 +471,6 @@
     .reveal-delay-4 { transition-delay: 0.4s; }
     .reveal-delay-5 { transition-delay: 0.5s; }
 
-    /* ── RESPONSIVE ── */
     @media (max-width: 900px) {
       nav { padding: 16px 24px; }
       .nav-links { display: none; }
@@ -503,7 +492,6 @@
 </head>
 <body>
 
-<!-- ── NAV ── -->
 <nav>
   <a href="#" class="nav-logo">
     <div class="nav-logo-icon">📚</div>
@@ -517,7 +505,6 @@
   </ul>
 </nav>
 
-<!-- ── HERO ── -->
 <section class="hero">
   <div class="hero-orbs">
     <div class="orb orb1"></div>
@@ -572,7 +559,6 @@
   </div>
 </section>
 
-<!-- ── FEATURES ── -->
 <section class="features-section" id="features">
   <div style="max-width:1100px; margin:0 auto;">
     <div class="features-header reveal">
@@ -616,7 +602,6 @@
   </div>
 </section>
 
-<!-- ── ROLES ── -->
 <section class="roles-section" id="roles">
   <div style="max-width:1100px; margin:0 auto;">
     <div class="reveal">
@@ -626,7 +611,6 @@
     </div>
 
     <div class="roles-layout">
-      <!-- Student -->
       <div class="role-panel student-panel reveal reveal-delay-1">
         <div class="role-panel-glow"></div>
         <div class="role-badge student-badge">🎓 Student</div>
@@ -642,7 +626,6 @@
         <a href="app.html" class="btn-role btn-student">Get Started as Student →</a>
       </div>
 
-      <!-- Admin -->
       <div class="role-panel admin-panel reveal reveal-delay-2">
         <div class="role-panel-glow"></div>
         <div class="role-badge admin-badge">🏛️ Library Admin</div>
@@ -661,7 +644,6 @@
   </div>
 </section>
 
-<!-- ── HOW IT WORKS ── -->
 <section class="how-section" id="how">
   <div style="max-width:1100px; margin:0 auto; text-align:center;">
     <div class="reveal">
@@ -694,7 +676,6 @@
   </div>
 </section>
 
-<!-- ── TECH STRIP ── -->
 <div class="tech-section">
   <div class="tech-inner reveal">
     <span class="tech-label">Powered by</span>
@@ -708,7 +689,6 @@
   </div>
 </div>
 
-<!-- ── CTA ── -->
 <section class="cta-section">
   <div class="cta-glow"></div>
   <div class="reveal">
@@ -716,17 +696,12 @@
     <h2 class="section-title">Start using SMARTLIB<br>today — it's free.</h2>
     <p class="section-sub">Join students and admins already using SMARTLIB to manage their library the smart way.</p>
     <div class="hero-actions">
-      <a href="app.html" class="btn-hero-primary">
-        Open SMARTLIB →
-      </a>
-      <a href="#features" class="btn-hero-ghost">
-        Learn More
-      </a>
+      <a href="app.html" class="btn-hero-primary">Open SMARTLIB →</a>
+      <a href="#features" class="btn-hero-ghost">Learn More</a>
     </div>
   </div>
 </section>
 
-<!-- ── FOOTER ── -->
 <footer>
   <a href="#" class="footer-logo">
     <div class="footer-logo-icon">📚</div>
@@ -742,14 +717,12 @@
 </footer>
 
 <script>
-  // Scroll reveal
   const revealEls = document.querySelectorAll('.reveal');
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
   }, { threshold: 0.12 });
   revealEls.forEach(el => observer.observe(el));
 
-  // Smooth active nav link highlight
   const sections = document.querySelectorAll('section[id]');
   const navLinks = document.querySelectorAll('.nav-links a');
   window.addEventListener('scroll', () => {
