@@ -1,7 +1,8 @@
 // =============================================
-//   SMARTLIB - app.js v4.0
-//   Firebase Auth + Firestore + Google Auth
-//   Email Verification + Enhanced Registration
+//   SMARTLIB - app.js v4.1
+//   Firebase Auth + Firestore
+//   Loading Screen | Forgot PW | Admin Code
+//   Student Email Verification | Mobile Nav
 // =============================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
@@ -10,11 +11,10 @@ import {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
-  sendEmailVerification
+  sendEmailVerification,
+  sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import {
   getFirestore,
@@ -28,10 +28,8 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
   onSnapshot,
-  serverTimestamp,
-  Timestamp
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 
 // ===== FIREBASE INIT =====
@@ -46,9 +44,11 @@ const firebaseConfig = {
 };
 const firebaseApp = initializeApp(firebaseConfig);
 getAnalytics(firebaseApp);
-const auth     = getAuth(firebaseApp);
-const db       = getFirestore(firebaseApp);
-const provider = new GoogleAuthProvider();
+const auth = getAuth(firebaseApp);
+const db   = getFirestore(firebaseApp);
+
+// ===== CONSTANTS =====
+const ADMIN_SECRET = "admincheck2026sl";
 
 // ===== STATE =====
 let currentUser     = null;
@@ -61,7 +61,37 @@ let unsubBooks      = null;
 let unsubRequests   = null;
 let onlineInterval  = null;
 let pendingVerifyEmail = null;
-let pendingVerifyRole  = null;
+
+// ===== LOADING SCREEN =====
+function runLoadingScreen(onDone) {
+  const bar   = document.getElementById("loadingBar");
+  const label = document.getElementById("loadingLabel");
+  const steps = [
+    { pct: 20, msg: "Connecting to database..." },
+    { pct: 50, msg: "Loading library data..." },
+    { pct: 75, msg: "Preparing your session..." },
+    { pct: 95, msg: "Almost ready..." },
+  ];
+  let i = 0;
+  function next() {
+    if (i >= steps.length) {
+      bar.style.width  = "100%";
+      label.textContent = "Welcome to SMARTLIB";
+      setTimeout(() => {
+        const ls = document.getElementById("loadingScreen");
+        ls.style.opacity = "0";
+        ls.style.transition = "opacity 0.5s ease";
+        setTimeout(() => { ls.style.display = "none"; onDone(); }, 500);
+      }, 400);
+      return;
+    }
+    bar.style.width   = steps[i].pct + "%";
+    label.textContent = steps[i].msg;
+    i++;
+    setTimeout(next, 380 + Math.random() * 180);
+  }
+  next();
+}
 
 // ===== HELPERS =====
 function nowStr() {
@@ -70,11 +100,9 @@ function nowStr() {
     hour: "2-digit", minute: "2-digit"
   });
 }
-
 function validateGmail(email) {
   return /^[a-zA-Z0-9._%+\-]+@gmail\.com$/.test(email);
 }
-
 function showToast(msg, type) {
   const t = document.getElementById("toast");
   t.innerHTML = msg;
@@ -82,17 +110,15 @@ function showToast(msg, type) {
   setTimeout(() => t.classList.remove("show"), 3800);
 }
 
-// ===== PASSWORD STRENGTH =====
+// ===== PASSWORD =====
 function checkPasswordStrength(pw) {
-  let score = 0;
   const checks = {
     length:    pw.length >= 8,
     uppercase: /[A-Z]/.test(pw),
     number:    /[0-9]/.test(pw),
     special:   /[^A-Za-z0-9]/.test(pw)
   };
-  score = Object.values(checks).filter(Boolean).length;
-  return { score, checks };
+  return { score: Object.values(checks).filter(Boolean).length, checks };
 }
 
 window.updatePasswordStrength = function (inputId, barId, msgId) {
@@ -101,17 +127,51 @@ window.updatePasswordStrength = function (inputId, barId, msgId) {
   const msg = document.getElementById(msgId);
   if (!pw) { bar.style.width = "0%"; bar.className = "pw-strength-bar"; msg.textContent = ""; return; }
   const { score, checks } = checkPasswordStrength(pw);
-  const labels   = ["", "Weak", "Fair", "Good", "Strong"];
-  const classes  = ["", "strength-weak", "strength-fair", "strength-good", "strength-strong"];
-  const widths   = ["0%", "25%", "50%", "75%", "100%"];
+  const labels  = ["", "Weak", "Fair", "Good", "Strong"];
+  const classes = ["", "strength-weak", "strength-fair", "strength-good", "strength-strong"];
+  const widths  = ["0%", "25%", "50%", "75%", "100%"];
   bar.style.width = widths[score];
   bar.className   = "pw-strength-bar " + (classes[score] || "");
   let hints = [];
-  if (!checks.length)    hints.push("min. 8 chars");
+  if (!checks.length)    hints.push("8+ characters");
   if (!checks.uppercase) hints.push("uppercase letter");
-  if (!checks.number)    hints.push("number");
-  msg.textContent = score < 4 ? `Add: ${hints.join(", ")}` : "✅ Strong password";
+  if (!checks.number)    hints.push("a number");
+  msg.textContent = score >= 4 ? "Strong password" : `Needs: ${hints.join(", ")}`;
   msg.style.color = score >= 3 ? "var(--green)" : "var(--orange)";
+};
+
+function generatePassword() {
+  const upper   = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower   = "abcdefghjkmnpqrstuvwxyz";
+  const digits  = "23456789";
+  const special = "!@#$%^&*";
+  let pw = upper[Math.floor(Math.random()*upper.length)]
+         + upper[Math.floor(Math.random()*upper.length)]
+         + lower[Math.floor(Math.random()*lower.length)]
+         + lower[Math.floor(Math.random()*lower.length)]
+         + lower[Math.floor(Math.random()*lower.length)]
+         + digits[Math.floor(Math.random()*digits.length)]
+         + digits[Math.floor(Math.random()*digits.length)]
+         + special[Math.floor(Math.random()*special.length)];
+  return pw.split('').sort(() => Math.random()-0.5).join('');
+}
+
+window.generateSuggestedPw = function () {
+  const pw  = generatePassword();
+  const row = document.getElementById("pwSuggestRow");
+  const val = document.getElementById("pwSuggestVal");
+  row.style.display = "flex";
+  val.textContent   = pw;
+};
+
+window.useSuggestedPw = function () {
+  const pw    = document.getElementById("pwSuggestVal").textContent;
+  const input = document.getElementById("regPassword");
+  input.value = pw;
+  input.type  = "text";
+  updatePasswordStrength("regPassword", "pwStrengthBar", "pwStrengthMsg");
+  showToast("Password copied to field. Remember to save it!", "");
+  setTimeout(() => { input.type = "password"; }, 3000);
 };
 
 // ===== THEME =====
@@ -119,8 +179,12 @@ function applyTheme(theme) {
   currentTheme = theme;
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("smartlib-theme", theme);
-  const btn = document.getElementById("themeBtn");
-  if (btn) btn.textContent = theme === "dark" ? "☀️" : "🌙";
+  const icon = document.getElementById("themeIcon");
+  if (icon) {
+    icon.innerHTML = theme === "dark"
+      ? '<circle cx="12" cy="12" r="5"/><path stroke-linecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>'
+      : '<path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>';
+  }
   const light = document.getElementById("themeLight");
   const dark  = document.getElementById("themeDark");
   if (light) light.classList.toggle("active", theme === "light");
@@ -133,8 +197,8 @@ applyTheme(currentTheme);
 // ===== PASSWORD TOGGLE =====
 window.togglePw = function (inputId, el) {
   const input = document.getElementById(inputId);
-  if (input.type === "password") { input.type = "text";     el.textContent = "🙈"; }
-  else                           { input.type = "password"; el.textContent = "👁️"; }
+  if (input.type === "password") { input.type = "text";     el.textContent = "Hide"; }
+  else                           { input.type = "password"; el.textContent = "Show"; }
 };
 
 // ===== ROLE SELECTION =====
@@ -147,6 +211,7 @@ window.backToRole = function () {
   document.getElementById("loginForm").style.display    = "none";
   document.getElementById("registerForm").style.display = "none";
   document.getElementById("verifyPanel").style.display  = "none";
+  document.getElementById("forgotForm").style.display   = "none";
   document.getElementById("roleSelector").style.display = "block";
   selectedRole = null;
 };
@@ -157,6 +222,7 @@ function _showLogin() {
   document.getElementById("loginForm").style.display     = "block";
   document.getElementById("registerForm").style.display  = "none";
   document.getElementById("verifyPanel").style.display   = "none";
+  document.getElementById("forgotForm").style.display    = "none";
   document.getElementById("loginError").textContent      = "";
   _setPill("loginRolePill");
 }
@@ -166,69 +232,50 @@ window.showRegister = function () {
   document.getElementById("loginForm").style.display    = "none";
   document.getElementById("registerForm").style.display = "block";
   document.getElementById("verifyPanel").style.display  = "none";
+  document.getElementById("forgotForm").style.display   = "none";
   document.getElementById("regError").textContent       = "";
+  document.getElementById("pwSuggestRow").style.display = "none";
+  // Show/hide fields based on role
+  const isAdmin = selectedRole === "admin";
+  document.getElementById("adminSecretWrap").style.display  = isAdmin ? "block" : "none";
+  document.getElementById("studentOnlyFields").style.display = isAdmin ? "none"  : "block";
   _setPill("regRolePill");
+};
+
+window.showForgotPassword = function () {
+  document.getElementById("loginForm").style.display  = "none";
+  document.getElementById("forgotForm").style.display = "block";
+  document.getElementById("forgotMsg").textContent    = "";
+  document.getElementById("forgotError").textContent  = "";
 };
 
 function _setPill(id) {
   const pill = document.getElementById(id);
   if (!pill) return;
-  pill.textContent = selectedRole === "admin" ? "🏛️ Library Admin" : "🎓 Student";
+  pill.textContent = selectedRole === "admin" ? "Library Admin" : "Student";
   pill.className   = "role-pill " + (selectedRole === "admin" ? "pill-admin" : "pill-student");
 }
 
-// ===== GOOGLE SIGN-IN =====
-window.loginWithGoogle = async function () {
-  const errEl = document.getElementById("loginError");
-  try {
-    const result  = await signInWithPopup(auth, provider);
-    const uid     = result.user.uid;
-    const userDoc = await getDoc(doc(db, "users", uid));
-    if (!userDoc.exists()) {
-      // New Google user — auto-fill register form
-      await signOut(auth);
-      window.showRegister();
-      document.getElementById("regName").value  = result.user.displayName || "";
-      document.getElementById("regEmail").value = result.user.email || "";
-      document.getElementById("regEmail").readOnly = true;
-      document.getElementById("googleUidHidden").value = uid;
-      showToast("👋 Complete your profile to finish signing up!", "");
-      return;
-    }
-    if (userDoc.data().role !== selectedRole) {
-      await signOut(auth);
-      errEl.textContent = "Wrong role selected for this account.";
-      return;
-    }
-    // onAuthStateChanged handles the rest
-  } catch (e) {
-    errEl.textContent = "Google sign-in failed. Please try again.";
-  }
-};
+// ===== FORGOT PASSWORD =====
+window.sendPasswordReset = async function () {
+  const email  = document.getElementById("forgotEmail").value.trim().toLowerCase();
+  const msgEl  = document.getElementById("forgotMsg");
+  const errEl  = document.getElementById("forgotError");
+  msgEl.textContent = ""; errEl.textContent = "";
 
-window.registerWithGoogle = async function () {
-  const errEl = document.getElementById("regError");
+  if (!email)               { errEl.textContent = "Please enter your Gmail address."; return; }
+  if (!validateGmail(email)) { errEl.textContent = "Please use a valid @gmail.com address."; return; }
+
   try {
-    const result  = await signInWithPopup(auth, provider);
-    const uid     = result.user.uid;
-    const userDoc = await getDoc(doc(db, "users", uid));
-    if (userDoc.exists()) {
-      if (userDoc.data().role !== selectedRole) {
-        await signOut(auth);
-        errEl.textContent = "This Google account is already registered under a different role.";
-        return;
-      }
-      // Already registered, just sign in
-      return;
-    }
-    document.getElementById("regName").value  = result.user.displayName || "";
-    document.getElementById("regEmail").value = result.user.email || "";
-    document.getElementById("regEmail").readOnly = true;
-    document.getElementById("googleUidHidden").value = uid;
-    showToast("👋 Complete your profile below to finish signing up!");
-    await signOut(auth);
+    await sendPasswordResetEmail(auth, email);
+    msgEl.textContent = "Reset link sent! Check your inbox.";
+    showToast("Password reset email sent to " + email, "");
   } catch (e) {
-    errEl.textContent = "Google sign-in failed.";
+    if (e.code === "auth/user-not-found") {
+      errEl.textContent = "No account found with that email.";
+    } else {
+      errEl.textContent = "Failed to send reset email. Try again.";
+    }
   }
 };
 
@@ -237,6 +284,7 @@ window.login = async function () {
   const email    = document.getElementById("loginEmail").value.trim().toLowerCase();
   const password = document.getElementById("loginPassword").value.trim();
   const errEl    = document.getElementById("loginError");
+  errEl.textContent = "";
 
   if (!email || !password)   { errEl.textContent = "Please fill in all fields."; return; }
   if (!validateGmail(email)) { errEl.textContent = "Please use a valid @gmail.com address."; return; }
@@ -254,7 +302,14 @@ window.login = async function () {
       errEl.textContent = "Wrong role selected for this account.";
       return;
     }
-    // onAuthStateChanged fires and calls _showApp()
+    // Student requires email verification
+    if (selectedRole === "student" && !cred.user.emailVerified) {
+      pendingVerifyEmail = email;
+      await signOut(auth);
+      _showVerifyPanel(email);
+      return;
+    }
+    // onAuthStateChanged handles the rest
   } catch (e) {
     errEl.textContent = "Invalid email or password.";
   }
@@ -262,56 +317,59 @@ window.login = async function () {
 
 // ===== REGISTER =====
 window.register = async function () {
-  const name     = document.getElementById("regName").value.trim();
-  const email    = document.getElementById("regEmail").value.trim().toLowerCase();
+  const name    = document.getElementById("regName").value.trim();
+  const email   = document.getElementById("regEmail").value.trim().toLowerCase();
   const password = document.getElementById("regPassword").value.trim();
-  const address  = document.getElementById("regAddress").value.trim();
-  const contact  = document.getElementById("regContact").value.trim();
-  const errEl    = document.getElementById("regError");
-  const googleUid = document.getElementById("googleUidHidden").value.trim();
+  const errEl   = document.getElementById("regError");
+  errEl.textContent = "";
 
-  if (!name || !email || !address || !contact) {
-    errEl.textContent = "Please fill in all required fields."; return;
-  }
-  if (!validateGmail(email)) {
-    errEl.textContent = "Please use a valid @gmail.com address."; return;
+  // Admin-specific
+  if (selectedRole === "admin") {
+    const secretInput = document.getElementById("adminSecretCode").value.trim();
+    if (!secretInput) { errEl.textContent = "Please enter the admin secret code."; return; }
+    if (secretInput !== ADMIN_SECRET) { errEl.textContent = "Invalid admin secret code."; return; }
+    if (!name || !email) { errEl.textContent = "Please fill in all required fields."; return; }
+  } else {
+    const address = document.getElementById("regAddress").value.trim();
+    const contact = document.getElementById("regContact").value.trim();
+    if (!name || !email || !address || !contact) {
+      errEl.textContent = "Please fill in all required fields."; return;
+    }
   }
 
-  // Skip password checks for Google sign-up
-  if (!googleUid) {
-    if (!password) { errEl.textContent = "Please enter a password."; return; }
-    if (password.length < 8) { errEl.textContent = "Password must be at least 8 characters."; return; }
-    const { score, checks } = checkPasswordStrength(password);
-    if (!checks.uppercase) { errEl.textContent = "⚠️ Password must contain at least one uppercase letter."; return; }
-    if (!checks.number)    { errEl.textContent = "⚠️ Password must contain at least one number."; return; }
-    if (score < 3)         { errEl.textContent = "⚠️ Password is too weak. Add uppercase, numbers, or special chars."; return; }
-  }
+  if (!validateGmail(email)) { errEl.textContent = "Please use a valid @gmail.com address."; return; }
+  if (!password)             { errEl.textContent = "Please enter a password."; return; }
+  if (password.length < 8)  { errEl.textContent = "Password must be at least 8 characters."; return; }
+
+  const { score, checks } = checkPasswordStrength(password);
+  if (!checks.uppercase) { errEl.textContent = "Password must contain at least one uppercase letter."; return; }
+  if (!checks.number)    { errEl.textContent = "Password must contain at least one number."; return; }
+  if (score < 3)         { errEl.textContent = "Password is too weak. Add uppercase, numbers, or special chars."; return; }
 
   const userData = {
     name, email, role: selectedRole,
-    address, contact,
+    address: selectedRole === "student" ? document.getElementById("regAddress").value.trim() : "",
+    contact: selectedRole === "student" ? document.getElementById("regContact").value.trim() : "",
     createdAt: serverTimestamp(),
     online: false, lastSeen: null
   };
 
   try {
-    if (googleUid) {
-      // Google sign-up: user already created in Firebase Auth, just save Firestore doc
-      await setDoc(doc(db, "users", googleUid), userData);
-      showToast("✅ Account created! Please log in with Google.", "");
-      document.getElementById("regEmail").readOnly = false;
-      document.getElementById("googleUidHidden").value = "";
-      _showLogin();
-    } else {
-      // Email/password sign-up — send email verification
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, "users", cred.user.uid), userData);
+
+    if (selectedRole === "student") {
+      // Send email verification for students
       await sendEmailVerification(cred.user);
-      await setDoc(doc(db, "users", cred.user.uid), userData);
       pendingVerifyEmail = email;
-      pendingVerifyRole  = selectedRole;
       await signOut(auth);
       _showVerifyPanel(email);
-      showToast("📧 Verification email sent to " + email + "!", "");
+      showToast("Verification email sent to " + email, "");
+    } else {
+      // Admin: no email verification needed
+      await signOut(auth);
+      showToast("Admin account created! You can now log in.", "");
+      _showLogin();
     }
   } catch (e) {
     errEl.textContent = e.code === "auth/email-already-in-use"
@@ -325,12 +383,12 @@ function _showVerifyPanel(email) {
   document.getElementById("loginForm").style.display    = "none";
   document.getElementById("registerForm").style.display = "none";
   document.getElementById("roleSelector").style.display = "none";
+  document.getElementById("forgotForm").style.display   = "none";
   document.getElementById("verifyPanel").style.display  = "block";
   document.getElementById("verifyEmailDisplay").textContent = email || pendingVerifyEmail || "";
 }
 
 window.resendVerification = async function () {
-  // Ask user to log in briefly to send verification
   const email = pendingVerifyEmail;
   const pw    = prompt("Enter your password to resend verification email:");
   if (!pw) return;
@@ -338,7 +396,7 @@ window.resendVerification = async function () {
     const cred = await signInWithEmailAndPassword(auth, email, pw);
     await sendEmailVerification(cred.user);
     await signOut(auth);
-    showToast("📧 Verification email resent!", "");
+    showToast("Verification email resent!", "");
   } catch (e) {
     showToast("Failed to resend. Check your password.", "error");
   }
@@ -354,28 +412,26 @@ window.logout = async function () {
   if (unsubBooks)    { unsubBooks();    unsubBooks    = null; }
   if (unsubRequests) { unsubRequests(); unsubRequests = null; }
   if (onlineInterval) { clearInterval(onlineInterval); onlineInterval = null; }
-
-  // Mark offline
   if (currentUser) {
-    try {
-      await updateDoc(doc(db, "users", currentUser.uid), { online: false, lastSeen: serverTimestamp() });
-    } catch (_) {}
+    try { await updateDoc(doc(db, "users", currentUser.uid), { online: false, lastSeen: serverTimestamp() }); } catch (_) {}
   }
-
   await signOut(auth);
   currentUser = currentUserData = selectedRole = null;
-
-  document.getElementById("mainApp").style.display    = "none";
-  document.getElementById("authScreen").style.display = "flex";
+  document.getElementById("mainApp").style.display     = "none";
+  document.getElementById("authScreen").style.display  = "flex";
   document.getElementById("loginEmail").value    = "";
   document.getElementById("loginPassword").value = "";
   document.getElementById("loginForm").style.display    = "none";
   document.getElementById("registerForm").style.display = "none";
   document.getElementById("verifyPanel").style.display  = "none";
+  document.getElementById("forgotForm").style.display   = "none";
   document.getElementById("roleSelector").style.display = "block";
 };
 
 // ===== AUTH STATE OBSERVER =====
+let appReady = false;
+let pendingUser = null;
+
 onAuthStateChanged(auth, async (firebaseUser) => {
   if (firebaseUser) {
     const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
@@ -385,23 +441,37 @@ onAuthStateChanged(auth, async (firebaseUser) => {
     currentUserData = { uid: firebaseUser.uid, ...userDoc.data() };
     selectedRole    = currentUserData.role;
 
-    // Mark online
+    if (appReady) {
+      _showApp();
+    } else {
+      pendingUser = true;
+    }
+
     await updateDoc(doc(db, "users", firebaseUser.uid), { online: true, lastSeen: serverTimestamp() });
-    // Keep-alive heartbeat
     if (onlineInterval) clearInterval(onlineInterval);
     onlineInterval = setInterval(async () => {
       if (currentUser) {
-        try {
-          await updateDoc(doc(db, "users", currentUser.uid), { online: true, lastSeen: serverTimestamp() });
-        } catch (_) {}
+        try { await updateDoc(doc(db, "users", currentUser.uid), { online: true, lastSeen: serverTimestamp() }); } catch (_) {}
       }
     }, 30000);
-
-    _showApp();
   } else {
-    document.getElementById("mainApp").style.display    = "none";
-    document.getElementById("authScreen").style.display = "flex";
+    if (appReady) {
+      document.getElementById("mainApp").style.display    = "none";
+      document.getElementById("authScreen").style.display = "flex";
+    }
   }
+});
+
+// ===== LOADING SCREEN INIT =====
+window.addEventListener("DOMContentLoaded", () => {
+  runLoadingScreen(() => {
+    appReady = true;
+    if (pendingUser && currentUserData) {
+      _showApp();
+    } else if (!currentUser) {
+      document.getElementById("authScreen").style.display = "flex";
+    }
+  });
 });
 
 // ===== SHOW APP =====
@@ -412,8 +482,10 @@ function _showApp() {
   const initials = currentUserData.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
   document.getElementById("sidebarAvatar").textContent = initials;
   document.getElementById("sidebarName").textContent   = currentUserData.name;
-  document.getElementById("sidebarRole").textContent   = currentUserData.role === "admin" ? "🏛️ Library Admin" : "🎓 Student";
+  document.getElementById("sidebarRole").textContent   = currentUserData.role === "admin" ? "Library Admin" : "Student";
   document.getElementById("topbarAvatar").textContent  = initials;
+
+  _buildMobileNav();
 
   if (currentUserData.role === "admin") {
     document.getElementById("adminNav").style.display   = "flex";
@@ -426,30 +498,95 @@ function _showApp() {
   }
 }
 
+// ===== MOBILE NAV =====
+function _buildMobileNav() {
+  const nav = document.getElementById("mobileBottomNav");
+  nav.innerHTML = "";
+  const isMobile = window.innerWidth <= 768;
+
+  let items = [];
+  if (currentUserData.role === "admin") {
+    items = [
+      { id: "dashboard", label: "Dashboard", icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>` },
+      { id: "books",     label: "Books",     icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>` },
+      { id: "requests",  label: "Requests",  icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>` },
+      { id: "users",     label: "Users",     icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>` },
+      { id: "settings",  label: "Settings",  icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>` },
+    ];
+  } else {
+    items = [
+      { id: "books",         label: "Books",         icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>` },
+      { id: "notifications", label: "Notifications", icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>` },
+      { id: "history",       label: "History",       icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>` },
+      { id: "settings",      label: "Settings",      icon: `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>` },
+    ];
+  }
+
+  items.forEach(item => {
+    const btn = document.createElement("button");
+    btn.className = "mobile-nav-btn";
+    btn.id = "mobnav-" + item.id;
+    btn.innerHTML = `<span class="mobile-nav-icon">${item.icon}</span><span class="mobile-nav-label">${item.label}</span>`;
+    btn.onclick = () => _showPage(item.id);
+    nav.appendChild(btn);
+  });
+
+  // Also fill settings mobile nav grid
+  const grid = document.getElementById("mobileNavGrid");
+  if (grid) {
+    grid.innerHTML = "";
+    items.filter(i => i.id !== "settings").forEach(item => {
+      const btn = document.createElement("button");
+      btn.className = "mobile-settings-nav-btn";
+      btn.onclick = () => _showPage(item.id);
+      btn.innerHTML = `${item.icon}<span>${item.label}</span>`;
+      grid.appendChild(btn);
+    });
+    document.getElementById("mobileNavSection").style.display = "block";
+  }
+}
+
+// ===== MOBILE BACK BUTTON =====
+window.goToDashboardMobile = function () {
+  if (currentUserData?.role === "admin") _showPage("dashboard");
+  else _showPage("books");
+};
+
 // ===== NAVIGATION =====
 function _showPage(page) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  document.querySelectorAll(".mobile-nav-btn").forEach(b => b.classList.remove("active"));
 
   const pageEl = document.getElementById("page-" + page);
   if (!pageEl) return;
   pageEl.classList.add("active");
 
-  const navEl = document.getElementById("nav-" + page);
+  const navEl    = document.getElementById("nav-" + page);
   if (navEl) navEl.classList.add("active");
+  const mobNavEl = document.getElementById("mobnav-" + page);
+  if (mobNavEl) mobNavEl.classList.add("active");
 
   document.getElementById("searchBoxWrap").style.display = page === "books" ? "flex" : "none";
 
+  // Mobile back button: show on non-primary pages when on mobile
+  const primaryPages = currentUserData?.role === "admin" ? ["dashboard", "settings"] : ["books", "settings"];
+  const backBtn = document.getElementById("mobileBackBtn");
+  if (backBtn) {
+    const isMobile = window.innerWidth <= 768;
+    backBtn.style.display = (isMobile && !primaryPages.includes(page)) ? "flex" : "none";
+  }
+
   const titles = {
-    dashboard:   ["Dashboard",      "Overview of library activity"],
-    books:       ["Book List",      "Browse all available books"],
-    requests:    ["Requests",       "Manage borrow and return requests"],
-    borrowed:    ["Borrowed Books", "Track currently borrowed books"],
-    addbook:     ["Add New Book",   "Add a book to the library"],
-    users:       ["Users",          "Manage student accounts & status"],
-    history:     ["My History",     "Your borrowing activity"],
-    settings:    ["Settings",       "Account preferences and options"],
-    notifications: ["Notifications", "Messages from the library admin"],
+    dashboard:     ["Dashboard",      "Overview of library activity"],
+    books:         ["Book List",      "Browse all available books"],
+    requests:      ["Requests",       "Manage borrow and return requests"],
+    borrowed:      ["Borrowed Books", "Track currently borrowed books"],
+    addbook:       ["Add New Book",   "Add a book to the library"],
+    users:         ["Users",          "Manage student accounts and status"],
+    history:       ["My History",     "Your borrowing activity"],
+    settings:      ["Settings",       "Account preferences and options"],
+    notifications: ["Notifications",  "Messages from the library admin"],
   };
   const [title, sub] = titles[page] || ["", ""];
   document.getElementById("pageTitle").textContent    = title;
@@ -473,7 +610,7 @@ window.showPage = _showPage;
 async function _updateRequestBadge() {
   const badge = document.getElementById("requestBadge");
   if (!badge) return;
-  const snap  = await getDocs(query(collection(db, "requests"), where("status", "==", "pending")));
+  const snap = await getDocs(query(collection(db, "requests"), where("status", "==", "pending")));
   badge.textContent   = snap.size;
   badge.style.display = snap.size > 0 ? "inline-flex" : "none";
 }
@@ -498,7 +635,6 @@ function startBooksListener() {
     const books = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     _populateGenreFilter(books);
     renderBooks(books);
-    if (document.getElementById("page-borrowed")?.classList.contains("active"))  renderBorrowedTable(books);
     if (document.getElementById("page-dashboard")?.classList.contains("active")) renderDashboard();
   });
 }
@@ -540,7 +676,7 @@ async function renderDashboard() {
         <div class="dash-item">
           <div>
             <div class="dash-item-title">${r.bookTitle}</div>
-            <div class="dash-item-sub">by ${r.studentName} · ${r.requestedAt}</div>
+            <div class="dash-item-sub">by ${r.studentName} &middot; ${r.requestedAt}</div>
           </div>
           <span class="badge-pending">Pending</span>
         </div>`).join("");
@@ -555,7 +691,7 @@ async function renderDashboard() {
         <div class="dash-item">
           <div>
             <div class="dash-item-title">${r.bookTitle}</div>
-            <div class="dash-item-sub">by ${r.studentName} · ${r.returnedAt}</div>
+            <div class="dash-item-sub">by ${r.studentName} &middot; ${r.returnedAt}</div>
           </div>
           <span class="badge-returned">Returned</span>
         </div>`).join("");
@@ -575,7 +711,7 @@ window.applyFilter = async function () {
   const status = document.getElementById("statusFilter").value;
   const snap   = await getDocs(collection(db, "books"));
   let books    = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  if (genre)              books = books.filter(b => b.genre === genre);
+  if (genre)               books = books.filter(b => b.genre === genre);
   if (status === "available") books = books.filter(b => b.available);
   if (status === "borrowed")  books = books.filter(b => !b.available);
   renderBooks(books);
@@ -607,26 +743,26 @@ async function renderBooks(books) {
   }
 
   books.forEach(book => {
-    const card        = document.createElement("div");
-    card.className    = "book-card";
+    const card     = document.createElement("div");
+    card.className = "book-card";
     const statusClass = book.available ? "status-available" : "status-borrowed";
-    const statusText  = book.available ? "✅ Available"     : "📤 Borrowed";
+    const statusText  = book.available ? "Available" : "Borrowed";
 
-    const hasPendingBorrow      = !isAdmin && myRequests.some(r => r.type === "borrow" && r.bookId === book.id);
-    const hasPendingReturn      = !isAdmin && myRequests.some(r => r.type === "return" && r.bookId === book.id);
-    const studentCurrentlyHolds = !isAdmin && !book.available && book.borrowedByEmail === currentUserData?.email;
+    const hasPendingBorrow  = !isAdmin && myRequests.some(r => r.type === "borrow" && r.bookId === book.id);
+    const hasPendingReturn  = !isAdmin && myRequests.some(r => r.type === "return" && r.bookId === book.id);
+    const studentHolds      = !isAdmin && !book.available && book.borrowedByEmail === currentUserData?.email;
 
     let actionBtn = "";
     if (isAdmin) {
-      actionBtn = `<button class="btn-delete" onclick="deleteBook('${book.id}')">🗑️ Delete</button>`;
+      actionBtn = `<button class="btn-delete" onclick="deleteBook('${book.id}')">Delete</button>`;
     } else if (book.available) {
       actionBtn = hasPendingBorrow
-        ? `<button class="btn-borrow btn-pending" disabled>⏳ Requested</button>`
-        : `<button class="btn-borrow" onclick="openBorrowModal('${book.id}')">📤 Request Borrow</button>`;
-    } else if (studentCurrentlyHolds) {
+        ? `<button class="btn-borrow btn-pending" disabled>Requested</button>`
+        : `<button class="btn-borrow" onclick="openBorrowModal('${book.id}')">Request Borrow</button>`;
+    } else if (studentHolds) {
       actionBtn = hasPendingReturn
-        ? `<button class="btn-return-card btn-pending" disabled>⏳ Return Sent</button>`
-        : `<button class="btn-return-card" onclick="openReturnModal('${book.id}')">📥 Request Return</button>`;
+        ? `<button class="btn-return-card btn-pending" disabled>Return Sent</button>`
+        : `<button class="btn-return-card" onclick="openReturnModal('${book.id}')">Request Return</button>`;
     } else {
       actionBtn = `<button class="btn-borrow" disabled>Unavailable</button>`;
     }
@@ -644,7 +780,7 @@ async function renderBooks(books) {
         <span class="book-year">${book.year}</span>
       </div>
       ${book.desc ? `<div class="book-desc">${book.desc}</div>` : ""}
-      ${!book.available && book.borrowedBy ? `<div class="book-borrower">📌 Held by <b>${book.borrowedBy}</b></div>` : ""}
+      ${!book.available && book.borrowedBy ? `<div class="book-borrower">Held by <b>${book.borrowedBy}</b></div>` : ""}
       <div class="book-card-actions">${actionBtn}</div>`;
     grid.appendChild(card);
   });
@@ -692,13 +828,13 @@ function _renderBorrowRequests(pending) {
   list.innerHTML = pending.map(r => `
     <div class="request-card">
       <div class="request-info">
-        <div class="request-book">📖 ${r.bookTitle}</div>
-        <div class="request-student">👤 ${r.studentName} (${r.studentEmail})</div>
-        <div class="request-time">🕐 Requested: ${r.requestedAt}</div>
+        <div class="request-book">${r.bookTitle}</div>
+        <div class="request-student">${r.studentName} (${r.studentEmail})</div>
+        <div class="request-time">Requested: ${r.requestedAt}</div>
       </div>
       <div class="request-actions">
-        <button class="btn-approve" onclick="approveBorrow('${r.id}')">✅ Approve</button>
-        <button class="btn-reject"  onclick="rejectRequest('${r.id}')">❌ Reject</button>
+        <button class="btn-approve" onclick="approveBorrow('${r.id}')">Approve</button>
+        <button class="btn-reject"  onclick="rejectRequest('${r.id}')">Reject</button>
       </div>
     </div>`).join("");
 }
@@ -711,13 +847,13 @@ function _renderReturnRequests(pending) {
   list.innerHTML = pending.map(r => `
     <div class="request-card">
       <div class="request-info">
-        <div class="request-book">📖 ${r.bookTitle}</div>
-        <div class="request-student">👤 ${r.studentName} (${r.studentEmail})</div>
-        <div class="request-time">🕐 Requested: ${r.requestedAt}</div>
+        <div class="request-book">${r.bookTitle}</div>
+        <div class="request-student">${r.studentName} (${r.studentEmail})</div>
+        <div class="request-time">Requested: ${r.requestedAt}</div>
       </div>
       <div class="request-actions">
-        <button class="btn-approve" onclick="approveReturn('${r.id}')">✅ Confirm Return</button>
-        <button class="btn-reject"  onclick="rejectRequest('${r.id}')">❌ Reject</button>
+        <button class="btn-approve" onclick="approveReturn('${r.id}')">Confirm Return</button>
+        <button class="btn-reject"  onclick="rejectRequest('${r.id}')">Reject</button>
       </div>
     </div>`).join("");
 }
@@ -731,16 +867,12 @@ window.approveBorrow = async function (reqId) {
   const bookRef = doc(db, "books", req.bookId);
   const bookDoc = await getDoc(bookRef);
   if (!bookDoc.exists() || !bookDoc.data().available) {
-    showToast("❌ Book is no longer available.", "error");
+    showToast("Book is no longer available.", "error");
     await updateDoc(reqRef, { status: "rejected" });
-    renderRequests();
-    return;
+    renderRequests(); return;
   }
   const now = nowStr();
-  await updateDoc(bookRef, {
-    available: false, borrowedBy: req.studentName,
-    borrowedByEmail: req.studentEmail, borrowedAt: now
-  });
+  await updateDoc(bookRef, { available: false, borrowedBy: req.studentName, borrowedByEmail: req.studentEmail, borrowedAt: now });
   await addDoc(collection(db, "historyLog"), {
     bookId: req.bookId, bookTitle: req.bookTitle,
     bookAuthor: bookDoc.data().author, genre: bookDoc.data().genre,
@@ -749,20 +881,17 @@ window.approveBorrow = async function (reqId) {
   });
   await updateDoc(reqRef, { status: "approved" });
 
-  // Send notification to student
   const studentSnap = await getDocs(query(collection(db, "users"), where("email", "==", req.studentEmail)));
   if (!studentSnap.empty) {
     const stuUid = studentSnap.docs[0].id;
     await addDoc(collection(db, "notifications"), {
       toUid: stuUid, toEmail: req.studentEmail, toName: req.studentName,
-      title: "📗 Borrow Approved!",
+      title: "Borrow Approved",
       message: `Your request to borrow "${req.bookTitle}" has been approved. Please remember to return it on time.`,
-      type: "borrow_approved", read: false, sentAt: nowStr(),
-      sentByName: currentUserData.name
+      type: "borrow_approved", read: false, sentAt: nowStr(), sentByName: currentUserData.name
     });
   }
-
-  showToast(`✅ Borrow approved for "${req.bookTitle}".`);
+  showToast(`Borrow approved for "${req.bookTitle}".`);
   renderRequests();
 };
 
@@ -782,25 +911,20 @@ window.approveReturn = async function (reqId) {
   for (const logDoc of logSnap.docs) {
     await updateDoc(doc(db, "historyLog", logDoc.id), { returnedAt: now, status: "returned" });
   }
-  await updateDoc(doc(db, "books", req.bookId), {
-    available: true, borrowedBy: null, borrowedByEmail: null, borrowedAt: null
-  });
+  await updateDoc(doc(db, "books", req.bookId), { available: true, borrowedBy: null, borrowedByEmail: null, borrowedAt: null });
   await updateDoc(reqRef, { status: "returned" });
 
-  // Notify student
   const studentSnap = await getDocs(query(collection(db, "users"), where("email", "==", req.studentEmail)));
   if (!studentSnap.empty) {
     const stuUid = studentSnap.docs[0].id;
     await addDoc(collection(db, "notifications"), {
       toUid: stuUid, toEmail: req.studentEmail, toName: req.studentName,
-      title: "📘 Return Confirmed",
+      title: "Return Confirmed",
       message: `Your return of "${req.bookTitle}" has been confirmed. Thank you!`,
-      type: "return_confirmed", read: false, sentAt: nowStr(),
-      sentByName: currentUserData.name
+      type: "return_confirmed", read: false, sentAt: nowStr(), sentByName: currentUserData.name
     });
   }
-
-  showToast(`✅ Return confirmed for "${req.bookTitle}".`);
+  showToast(`Return confirmed for "${req.bookTitle}".`);
   renderRequests();
 };
 
@@ -817,30 +941,24 @@ async function renderUsersPage() {
   const snap = await getDocs(query(collection(db, "users"), where("role", "==", "student")));
   const students = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 
-  if (students.length === 0) {
-    container.innerHTML = `<div class="empty-msg">No student accounts found.</div>`;
-    return;
-  }
+  if (students.length === 0) { container.innerHTML = `<div class="empty-msg">No student accounts found.</div>`; return; }
 
-  // For each student, get their borrowed count
   const booksSnap = await getDocs(collection(db, "books"));
   const books     = booksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   container.innerHTML = "";
   for (const stu of students) {
     const borrowedBooks = books.filter(b => !b.available && b.borrowedByEmail === stu.email);
-    const histSnap      = await getDocs(query(
-      collection(db, "historyLog"), where("studentEmail", "==", stu.email)
-    ));
+    const histSnap      = await getDocs(query(collection(db, "historyLog"), where("studentEmail", "==", stu.email)));
     const totalBorrowed = histSnap.size;
     const onlineClass   = stu.online ? "status-dot-online" : "status-dot-offline";
-    const onlineLabel   = stu.online ? "🟢 Online" : "⚫ Offline";
+    const onlineLabel   = stu.online ? "Online" : "Offline";
     const lastSeen      = stu.lastSeen?.toDate?.()
       ? stu.lastSeen.toDate().toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
       : "—";
 
     const borrowedList = borrowedBooks.length > 0
-      ? borrowedBooks.map(b => `<span class="user-book-tag">📖 ${b.title} <span class="book-since">(since ${b.borrowedAt})</span></span>`).join("")
+      ? borrowedBooks.map(b => `<span class="user-book-tag">${b.title} <span class="book-since">(since ${b.borrowedAt})</span></span>`).join("")
       : `<span class="no-books-tag">No books currently held</span>`;
 
     const card = document.createElement("div");
@@ -853,19 +971,19 @@ async function renderUsersPage() {
           <div class="user-card-email">${stu.email}</div>
           <div class="user-card-meta">
             <span class="${onlineClass}">${onlineLabel}</span>
-            <span class="user-card-sep">·</span>
+            <span class="user-card-sep">&middot;</span>
             <span>Last seen: ${stu.online ? "Now" : lastSeen}</span>
           </div>
         </div>
         <div class="user-card-actions">
-          <button class="btn-notify-user" onclick="openNotifyModal('${stu.uid}', '${stu.name}', '${stu.email}')">🔔 Notify</button>
+          <button class="btn-notify-user" onclick="openNotifyModal('${stu.uid}', '${stu.name}', '${stu.email}')">Notify</button>
         </div>
       </div>
       <div class="user-card-details">
-        <div class="user-detail-row"><span class="detail-label">📍 Address</span><span>${stu.address || "—"}</span></div>
-        <div class="user-detail-row"><span class="detail-label">📞 Contact</span><span>${stu.contact || "—"}</span></div>
-        <div class="user-detail-row"><span class="detail-label">📅 Joined</span><span>${stu.createdAt?.toDate?.() ? stu.createdAt.toDate().toLocaleDateString("en-US", {year:"numeric",month:"short",day:"numeric"}) : "—"}</span></div>
-        <div class="user-detail-row"><span class="detail-label">📚 Total Borrowed</span><span>${totalBorrowed} books</span></div>
+        <div class="user-detail-row"><span class="detail-label">Address</span><span>${stu.address || "—"}</span></div>
+        <div class="user-detail-row"><span class="detail-label">Contact</span><span>${stu.contact || "—"}</span></div>
+        <div class="user-detail-row"><span class="detail-label">Joined</span><span>${stu.createdAt?.toDate?.() ? stu.createdAt.toDate().toLocaleDateString("en-US", {year:"numeric",month:"short",day:"numeric"}) : "—"}</span></div>
+        <div class="user-detail-row"><span class="detail-label">Total Borrowed</span><span>${totalBorrowed} books</span></div>
       </div>
       <div class="user-books-section">
         <div class="user-books-label">Currently Holding:</div>
@@ -889,19 +1007,18 @@ window.closeNotifyModal = function () {
   document.getElementById("notifyModal").style.display = "none";
 };
 
-// Quick-fill notification templates
 window.fillNotifyTemplate = function (type) {
-  const titleEl = document.getElementById("notifyTitle");
-  const msgEl   = document.getElementById("notifyMessage");
+  const t = document.getElementById("notifyTitle");
+  const m = document.getElementById("notifyMessage");
   if (type === "overdue") {
-    titleEl.value = "⚠️ Overdue Book Reminder";
-    msgEl.value   = "This is a reminder that you have a book that is overdue for return. Please return it to the library as soon as possible to avoid penalties.";
+    t.value = "Overdue Book Reminder";
+    m.value = "This is a reminder that you have a book that is overdue for return. Please return it to the library as soon as possible.";
   } else if (type === "return") {
-    titleEl.value = "📥 Please Return Your Book";
-    msgEl.value   = "The book you borrowed is due for return. Kindly bring it back to the library at your earliest convenience. Thank you!";
+    t.value = "Please Return Your Book";
+    m.value = "The book you borrowed is due for return. Kindly bring it back to the library at your earliest convenience. Thank you!";
   } else if (type === "welcome") {
-    titleEl.value = "👋 Welcome to SMARTLIB!";
-    msgEl.value   = "Welcome to the SMARTLIB library system! Feel free to browse our collection and request books. Remember to return them on time. Happy reading!";
+    t.value = "Welcome to SMARTLIB";
+    m.value = "Welcome to the SMARTLIB library system! Feel free to browse our collection and request books. Remember to return them on time. Happy reading!";
   }
 };
 
@@ -916,30 +1033,25 @@ window.sendNotification = async function () {
   await addDoc(collection(db, "notifications"), {
     toUid: uid, toEmail: email, toName: name,
     title, message: msg,
-    type: "admin_message", read: false, sentAt: nowStr(),
-    sentByName: currentUserData.name
+    type: "admin_message", read: false, sentAt: nowStr(), sentByName: currentUserData.name
   });
   window.closeNotifyModal();
-  showToast(`🔔 Notification sent to ${name}!`);
+  showToast(`Notification sent to ${name}!`);
 };
 
 // ===== NOTIFICATIONS PAGE (STUDENT) =====
 async function renderNotifications() {
-  const list   = document.getElementById("notifList");
-  const empty  = document.getElementById("noNotifMsg");
+  const list  = document.getElementById("notifList");
+  const empty = document.getElementById("noNotifMsg");
   list.innerHTML = "";
 
-  const snap = await getDocs(query(
-    collection(db, "notifications"),
-    where("toUid", "==", currentUserData.uid)
-  ));
+  const snap = await getDocs(query(collection(db, "notifications"), where("toUid", "==", currentUserData.uid)));
   const notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
 
   if (notifs.length === 0) { empty.style.display = "block"; return; }
   empty.style.display = "none";
 
-  // Mark all as read
   for (const n of notifs.filter(n => !n.read)) {
     await updateDoc(doc(db, "notifications", n.id), { read: true });
   }
@@ -948,12 +1060,15 @@ async function renderNotifications() {
   notifs.forEach(n => {
     const card = document.createElement("div");
     card.className = "notif-card" + (n.read ? "" : " notif-unread");
+    const iconColor = n.type === "borrow_approved" ? "notif-icon-green" : n.type === "return_confirmed" ? "notif-icon-blue" : "notif-icon-purple";
     card.innerHTML = `
-      <div class="notif-icon">${n.type === "borrow_approved" ? "📗" : n.type === "return_confirmed" ? "📘" : "🔔"}</div>
+      <div class="notif-icon-wrap ${iconColor}">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      </div>
       <div class="notif-body">
         <div class="notif-title">${n.title}</div>
         <div class="notif-msg">${n.message}</div>
-        <div class="notif-meta">From: ${n.sentByName || "Library Admin"} · ${n.sentAt}</div>
+        <div class="notif-meta">From: ${n.sentByName || "Library Admin"} &middot; ${n.sentAt}</div>
       </div>`;
     list.appendChild(card);
   });
@@ -983,7 +1098,7 @@ window.confirmBorrowRequest = async function () {
     requestedAt: nowStr(), status: "pending"
   });
   window.closeBorrowModal();
-  showToast("📬 Borrow request sent! Awaiting admin approval.");
+  showToast("Borrow request sent! Awaiting admin approval.");
 };
 
 // ===== RETURN MODAL =====
@@ -1009,7 +1124,7 @@ window.confirmReturnRequest = async function () {
     requestedAt: nowStr(), status: "pending"
   });
   window.closeReturnModal();
-  showToast("📬 Return request sent! Awaiting admin confirmation.");
+  showToast("Return request sent! Awaiting admin confirmation.");
 };
 
 // ===== ADD BOOK =====
@@ -1023,7 +1138,7 @@ window.addBook = async function () {
 
   if (!title || !author || !genre || !year) {
     msg.style.color = "var(--red)";
-    msg.textContent = "⚠️ Please fill in all required fields.";
+    msg.textContent = "Please fill in all required fields.";
     return;
   }
   await addDoc(collection(db, "books"), {
@@ -1031,7 +1146,7 @@ window.addBook = async function () {
     available: true, borrowedBy: null, borrowedByEmail: null, borrowedAt: null
   });
   msg.style.color = "var(--green)";
-  msg.textContent = `✅ "${title}" has been added successfully!`;
+  msg.textContent = `"${title}" has been added successfully!`;
   ["newTitle","newAuthor","newGenre","newYear","newDesc"].forEach(id => {
     document.getElementById(id).value = "";
   });
@@ -1045,28 +1160,22 @@ window.deleteBook = async function (bookId) {
   const title = bookDoc.data().title;
   if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
   await deleteDoc(doc(db, "books", bookId));
-  showToast(`🗑️ "${title}" deleted.`, "error");
+  showToast(`"${title}" deleted.`, "error");
 };
 
 // ===== HISTORY =====
 async function renderHistory() {
   const tbody = document.getElementById("historyTableBody");
   const msg   = document.getElementById("noHistoryMsg");
-  const snap  = await getDocs(query(
-    collection(db, "historyLog"),
-    where("studentEmail", "==", currentUserData.email)
-  ));
-  const myLog    = snap.docs.map(d => d.data());
-  const total    = myLog.length;
-  const returned = myLog.filter(h => h.status === "returned").length;
-  const active   = myLog.filter(h => h.status === "active").length;
+  const snap  = await getDocs(query(collection(db, "historyLog"), where("studentEmail", "==", currentUserData.email)));
+  const myLog = snap.docs.map(d => d.data());
 
-  document.getElementById("histTotal").textContent    = total;
-  document.getElementById("histReturned").textContent = returned;
-  document.getElementById("histActive").textContent   = active;
+  document.getElementById("histTotal").textContent    = myLog.length;
+  document.getElementById("histReturned").textContent = myLog.filter(h => h.status === "returned").length;
+  document.getElementById("histActive").textContent   = myLog.filter(h => h.status === "active").length;
 
   tbody.innerHTML = "";
-  if (total === 0) { msg.style.display = "block"; return; }
+  if (myLog.length === 0) { msg.style.display = "block"; return; }
   msg.style.display = "none";
 
   myLog.slice().reverse().forEach(h => {
@@ -1095,7 +1204,7 @@ function renderSettings() {
   if (document.getElementById("settingsContact"))
     document.getElementById("settingsContact").textContent = currentUserData.contact || "—";
   const badge = document.getElementById("settingsRoleBadge");
-  badge.textContent = currentUserData.role === "admin" ? "🏛️ Library Admin" : "🎓 Student";
+  badge.textContent = currentUserData.role === "admin" ? "Library Admin" : "Student";
   badge.className   = "settings-role-badge " + (currentUserData.role === "admin" ? "pill-admin" : "pill-student");
   applyTheme(currentTheme);
 }
@@ -1132,8 +1241,7 @@ window.fuzzySearch = async function () {
 
   if (results.length === 0) {
     dropdown.innerHTML = `<div class="search-result-item"><div class="result-title" style="color:var(--gray)">No results found</div></div>`;
-    dropdown.classList.add("open");
-    return;
+    dropdown.classList.add("open"); return;
   }
   results.slice(0, 5).forEach(book => {
     const item = document.createElement("div");
@@ -1141,7 +1249,7 @@ window.fuzzySearch = async function () {
     item.innerHTML = `
       <div>
         <div class="result-title">${book.title}</div>
-        <div class="result-author">${book.author} · ${book.genre}</div>
+        <div class="result-author">${book.author} &middot; ${book.genre}</div>
       </div>
       <span class="status-badge ${book.available ? "status-available" : "status-borrowed"}" style="font-size:10px;">
         ${book.available ? "Available" : "Borrowed"}
@@ -1154,26 +1262,6 @@ window.fuzzySearch = async function () {
     dropdown.appendChild(item);
   });
   dropdown.classList.add("open");
-};
-
-// ===== SEED SAMPLE DATA =====
-window.seedSampleData = async function () {
-  const books = [
-    { title: "The Great Gatsby",                      author: "F. Scott Fitzgerald", genre: "Classic Fiction", year: 1925, desc: "A story of wealth, class, love and idealism in the Jazz Age." },
-    { title: "To Kill a Mockingbird",                 author: "Harper Lee",          genre: "Drama",           year: 1960, desc: "A powerful story of racial injustice and loss of innocence." },
-    { title: "1984",                                  author: "George Orwell",       genre: "Dystopian",       year: 1949, desc: "A chilling vision of a totalitarian future society." },
-    { title: "Harry Potter and the Sorcerer's Stone", author: "J.K. Rowling",        genre: "Fantasy",         year: 1997, desc: "The beginning of the magical journey of the boy who lived." },
-    { title: "The Alchemist",                         author: "Paulo Coelho",        genre: "Adventure",       year: 1988, desc: "A philosophical novel about following one's dreams." },
-    { title: "Sapiens",                               author: "Yuval Noah Harari",   genre: "Non-Fiction",     year: 2011, desc: "A brief history of humankind from Stone Age to present." },
-    { title: "Atomic Habits",                         author: "James Clear",         genre: "Self-Help",       year: 2018, desc: "A guide to building good habits and breaking bad ones." },
-    { title: "The Hobbit",                            author: "J.R.R. Tolkien",      genre: "Fantasy",         year: 1937, desc: "A fantasy novel about the quest of Bilbo Baggins." },
-  ];
-  for (const b of books) {
-    await addDoc(collection(db, "books"), {
-      ...b, available: true, borrowedBy: null, borrowedByEmail: null, borrowedAt: null
-    });
-  }
-  console.log("✅ Sample books seeded!");
 };
 
 // ===== CLOSE DROPDOWNS / MODAL BACKDROPS =====
@@ -1191,4 +1279,15 @@ document.getElementById("returnModal").addEventListener("click", function (e) {
 });
 document.getElementById("notifyModal").addEventListener("click", function (e) {
   if (e.target === this) window.closeNotifyModal();
+});
+
+// ===== HANDLE RESIZE FOR MOBILE BACK BUTTON =====
+window.addEventListener("resize", () => {
+  const activePage = document.querySelector(".page.active");
+  if (!activePage) return;
+  const page = activePage.id.replace("page-", "");
+  const backBtn = document.getElementById("mobileBackBtn");
+  if (!backBtn) return;
+  const primaryPages = currentUserData?.role === "admin" ? ["dashboard", "settings"] : ["books", "settings"];
+  backBtn.style.display = (window.innerWidth <= 768 && !primaryPages.includes(page)) ? "flex" : "none";
 });
